@@ -16,6 +16,9 @@
  *      #define AUDIO_BIAS ((uint16_t) 512)
  *      #define PWM_RATE (60000*2)
  *    
+ *  Notes:
+ *  - Seems to not start up sometimes? or if all the pots are set to zero?
+ *  
  * 15 Feb 2022 - @todbot
  */
 
@@ -33,9 +36,10 @@
 #include <Adafruit_seesaw.h>
 
 #define NUM_KNOBS 8
-#define NUM_VOICES 8
+#define NUM_VOICES 16
 
-Adafruit_seesaw ss( &Wire1 );  // StemmaQT port is on Wire1 on QTPy RP2040 
+Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL
+//Adafruit_seesaw ss( &Wire1 );  // StemmaQT port is on Wire1 on QTPy RP2040 
 
 // seesaw on Attiny8x7, analog in can be 0-3, 6, 7, 18-20
 uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 18,19};  // pinout on seeknobs3qtpy board
@@ -86,6 +90,13 @@ void loop() {
   audioHook();
 }
 
+void setup1() {
+  setupKnobs();  
+}
+void loop1() {
+  readKnobs();
+}
+
 void setupKnobs() {
   if(!ss.begin()){
     Serial.println(F("seesaw not found!"));
@@ -124,18 +135,19 @@ void readKnobs() {
 //
 void setOscs() {
   
-  for(int i=0; i<NUM_VOICES; i++) {
+  for(int i=0; i<NUM_KNOBS; i++) {
     aOscs[i].setFreq( knob_vals[ i ] );
   }
+
+  for(int i=0; i<NUM_KNOBS; i++) {
+    aOscs[i+8].setFreq( knob_vals[ i ] / 2 );
+  }
   
-//  for( int i=0; i<NUM_VOICES; i++) {
-//    aOscs[i+4].setFreq( knob_vals[i]*2 );
-//  }
-//    aOscs[i].setFreq( knob_vals[ i%NUM_KNOBS ] );
-//    aOscs[i+4].setFreq( knob_vals[ i%NUM_KNOBS ]*2 );
-    // Q16n16 note = (float)(knob_vals[i] * 127 / 1023);
-    //portamentos[i].start( Q8n0_to_Q16n16(note) ); // but portamentos update at CONTROL_RATE too;
-//  }
+   //    aOscs[i].setFreq( knob_vals[ i%NUM_KNOBS ] );
+  //    aOscs[i+4].setFreq( knob_vals[ i%NUM_KNOBS ]*2 );
+  // Q16n16 note = (float)(knob_vals[i] * 127 / 1023);
+  //portamentos[i].start( Q8n0_to_Q16n16(note) ); // but portamentos update at CONTROL_RATE too;
+  //  }
 }
 
 
@@ -144,7 +156,7 @@ void updateControl() {
   // filter range (0-255) corresponds with 0-8191Hz
   // oscillator & mods run from -128 to 127
 
-  readKnobs();
+//  readKnobs();
 
   setOscs();
 
@@ -166,5 +178,5 @@ AudioOutput_t updateAudio() {
     asig += aOscs[i].next();
   }
   asig = lpf.next(asig);
-  return MonoOutput::fromAlmostNBit(11, asig);
+  return MonoOutput::fromAlmostNBit(13, asig); // how to programmitcally determine bits, 11 bits ok for 16 voices
 }
