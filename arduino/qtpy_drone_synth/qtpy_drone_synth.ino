@@ -1,8 +1,22 @@
 /**
- * qtpy_drone_synth.ino  - 
- *    Test out doing multicore stuff with Mozzi on QTPy RP2040
- *    We can do all the I2C on core1, leaving core0 for Mozzi synth
- * 26 Jan 2022 - @todbot 
+ * qtpy_drone_synth.ino  -  8 knobs control (at least) 8 oscillators, knobs via seesaw
+ * 
+ *  Circuit:
+ *  - 8 pots hook up to seesaw, seesaw connected to QTPy RP2040
+ *  - Copy the PWM cleanup RC filter from schematic figure 3.4.1 "PWM Audio" in
+ *     https://datasheets.raspberrypi.com/rp2040/hardware-design-with-rp2040.pdf
+ *     also see: https://www.youtube.com/watch?v=rwPTpMuvSXg
+ *  - Wire "A0" of QTPy RP2040 to input of this circuit, output to TRRS Tip & Ring1
+ *  
+ *  Compiling:
+ *  - Use the RP2040 Arduino core at: https://github.com/earlephilhower/arduino-pico
+ *  - Use the Mozzi fork at https://github.com/pschatzmann/Mozzi
+ *  - For slightly better audio quality, add the following after "#define PWM_RATE" in "Mozzi/AudioConfigRP2040.h"
+ *      #define AUDIO_BITS 10
+ *      #define AUDIO_BIAS ((uint16_t) 512)
+ *      #define PWM_RATE (60000*2)
+ *    
+ * 15 Feb 2022 - @todbot
  */
 
 #define CONTROL_RATE 128 
@@ -24,8 +38,7 @@
 Adafruit_seesaw ss( &Wire1 );  // StemmaQT port is on Wire1 on QTPy RP2040 
 
 // seesaw on Attiny8x7, analog in can be 0-3, 6, 7, 18-20
-//uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {0,1,2,3}; //, 6,7,18,19};
-uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 18,19};
+uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 18,19};  // pinout on seeknobs3qtpy board
 uint8_t seesaw_knob_i = 0;
 float knob_smoothing = 0.5; // 1.0 = all old value
 int knob_vals[ NUM_KNOBS ];
@@ -37,20 +50,8 @@ Oscil<COS2048_NUM_CELLS, CONTROL_RATE> kFilterMod(COS2048_DATA);
 LowPassFilter lpf;
 uint8_t resonance = 120; // range 0-255, 255 is most resonant
 
-
+uint32_t lastDebugMillis = 0; // debug
 uint32_t knobUpdateMillis = 0;
-
-//// Running on core1
-//void setup1() {
-//  setupKnobs();
-//}
-//// Runnong on core1
-//void loop1() {
-//  if( millis() - knobUpdateMillis > 10 ) { 
-//    knobUpdateMillis = millis();
-//    readKnobs();
-//  }
-//}
 
 // 
 void setup() {
@@ -70,10 +71,10 @@ void setup() {
   for( int i=0; i<NUM_VOICES; i++) { 
      aOscs[i].setTable(SAW_ANALOGUE512_DATA);
   }
-//  for ( int i = 0; i < NUM_VOICES; i++) {
-//    portamentos[i].start(Q8n0_to_Q16n16(knob_vals[i]));
-//    portamentos[i].setTime(100);
-//  }
+  //  for ( int i = 0; i < NUM_VOICES; i++) {
+  //    portamentos[i].start(Q8n0_to_Q16n16(knob_vals[i]));
+  //    portamentos[i].setTime(100);
+  //  }
 
   setupKnobs();
   
@@ -92,11 +93,12 @@ void setupKnobs() {
   }
 }
 
-const int KNOBS_PER_READ = 2;
 
-//
 // i2c transactions take time, so only do one at a time
 void readKnobs() {
+  
+  const int KNOBS_PER_READ = 2;
+  
   int end_i = (seesaw_knob_i + KNOBS_PER_READ) % NUM_KNOBS;
   int done = false;
 
@@ -121,6 +123,7 @@ void readKnobs() {
 
 //
 void setOscs() {
+  
   for(int i=0; i<NUM_VOICES; i++) {
     aOscs[i].setFreq( knob_vals[ i ] );
   }
@@ -135,9 +138,8 @@ void setOscs() {
 //  }
 }
 
-uint32_t lastDebugMillis=0; // debug
 
-// mozzi function, called every CONTROL_RATE
+// Mozzi function, called every CONTROL_RATE
 void updateControl() {
   // filter range (0-255) corresponds with 0-8191Hz
   // oscillator & mods run from -128 to 127
