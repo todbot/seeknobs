@@ -60,9 +60,10 @@ uint32_t knobUpdateMillis = 0;
 // 
 void setup() {
   // RP2040 defaults to GP0, from https://github.com/pschatzmann/Mozzi/
-  // Mozzi.setPin(0,16); // RP2040 GP16 / Trinkey QT2040 GP16 
-  // Mozzi.setPin(0,20); // RP2040 GP20 / QT Py RP2040"RX"
+  #ifdef ARDUINO_ARCH_RP2040
   Mozzi.setPin(0,29);  // this sets RP2040 GP29 / QT Py RP2040 "A0"
+  #endif
+  // on SAMD21 output is A0 always
   
   Serial.begin(115200);
 
@@ -75,12 +76,10 @@ void setup() {
   for( int i=0; i<NUM_VOICES; i++) { 
      aOscs[i].setTable(SAW_ANALOGUE512_DATA);
   }
-  //  for ( int i = 0; i < NUM_VOICES; i++) {
-  //    portamentos[i].start(Q8n0_to_Q16n16(knob_vals[i]));
-  //    portamentos[i].setTime(100);
-  //  }
 
+  #ifndef ARDUINO_ARCH_RP2040
   setupKnobs();
+  #endif
   
   Serial.println("qtpy_drone_synth_testmulticore started");
 }
@@ -90,14 +89,18 @@ void loop() {
   audioHook();
 }
 
+// we are multicore on RP2040!
+#ifdef ARDUINO_ARCH_RP2040
 void setup1() {
   setupKnobs();  
 }
 void loop1() {
   readKnobs();
 }
+#endif
 
 void setupKnobs() {
+  Wire.setClock(400000);
   if(!ss.begin()){
     Serial.println(F("seesaw not found!"));
     while(1) delay(10);
@@ -143,11 +146,6 @@ void setOscs() {
     aOscs[i+8].setFreq( knob_vals[ i ] / 2 );
   }
   
-   //    aOscs[i].setFreq( knob_vals[ i%NUM_KNOBS ] );
-  //    aOscs[i+4].setFreq( knob_vals[ i%NUM_KNOBS ]*2 );
-  // Q16n16 note = (float)(knob_vals[i] * 127 / 1023);
-  //portamentos[i].start( Q8n0_to_Q16n16(note) ); // but portamentos update at CONTROL_RATE too;
-  //  }
 }
 
 
@@ -156,7 +154,9 @@ void updateControl() {
   // filter range (0-255) corresponds with 0-8191Hz
   // oscillator & mods run from -128 to 127
 
-//  readKnobs();
+  #ifndef ARDUINO_ARCH_RP2040
+  readKnobs();
+  #endif
 
   setOscs();
 
