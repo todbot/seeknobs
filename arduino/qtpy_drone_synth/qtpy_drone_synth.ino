@@ -11,7 +11,8 @@
  *  Compiling:
  *  - Use the RP2040 Arduino core at: https://github.com/earlephilhower/arduino-pico
  *  - Use the Mozzi fork at https://github.com/pschatzmann/Mozzi
- *  - For slightly better audio quality, add the following after "#define PWM_RATE" in "Mozzi/AudioConfigRP2040.h"
+ *  - For slightly better audio quality, add the following after "#define PWM_RATE" 
+ *    in "Mozzi/AudioConfigRP2040.h"
  *      #define AUDIO_BITS 10
  *      #define AUDIO_BIAS ((uint16_t) 512)
  *      #define PWM_RATE (60000*2)
@@ -38,8 +39,7 @@
 #define NUM_KNOBS 8
 #define NUM_VOICES 16
 
-Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL
-//Adafruit_seesaw ss( &Wire1 );  // StemmaQT port is on Wire1 on QTPy RP2040 
+Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL, StemmaQT port on Wire1 on QTPy RP2040 
 
 // seesaw on Attiny8x7, analog in can be 0-3, 6, 7, 18-20
 uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 18,19};  // pinout on seeknobs3qtpy board
@@ -178,5 +178,6 @@ AudioOutput_t updateAudio() {
     asig += aOscs[i].next();
   }
   asig = lpf.next(asig);
-  return MonoOutput::fromAlmostNBit(13, asig); // how to programmitcally determine bits, 11 bits ok for 16 voices
+  // how to programmitcally determine bits, 11 bits ok for 16 voices
+  return MonoOutput::fromAlmostNBit(13, asig);
 }
