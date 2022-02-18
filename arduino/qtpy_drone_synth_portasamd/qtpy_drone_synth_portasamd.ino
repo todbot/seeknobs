@@ -165,19 +165,22 @@ void readKnobs() {
 void setOscs() {
   
   for(int i=0; i<NUM_KNOBS; i++) {
-    // random for oscillator "drift", conditional prevents "ticking" when zero/off
-    Q15n16 r = (knob_vals[i]==0) ? 0 : Q7n8_to_Q15n16(rand(100));
+    // random for oscillator "drift". conditional prevents "ticking" when zero/off
+    Q15n16 r = (knob_vals[i]==0) ? 0 : Q7n8_to_Q15n16(rand(50));
+    //Q15n16 r = 0;
+    // need to fix this logic
     if( last_knob_vals[i] != knob_vals[i] ) {
       if( noteMode ) {
         uint8_t note = knob_vals[i] / 8;
         portamentos[i].start( note );
-        portamentos[i+8].start( (uint8_t)(note - 12) );
+        portamentos[i+8].start( (uint8_t)(note + 12) );
       }
-      else { 
-        Q16n16 note = float_to_Q16n16( knob_vals[i]/8 );
-        portamentos[i].start( note );
-        portamentos[i+8].start( note - 12 + r );
-        //portamentos[i+8].start( note/2 ); // one octave down hhmmm
+      else {
+        float note = knob_vals[i] / 8;
+        Q16n16 notef1 = float_to_Q16n16( note );
+        Q16n16 notef2 = float_to_Q16n16( note + 12 + r );
+        portamentos[i].start( notef1 );
+        portamentos[i+8].start( notef2 );
       }
     }
     last_knob_vals[i] = knob_vals[i];
@@ -207,14 +210,20 @@ void updateControl() {
 
   if( isButtPressed(1) ) { 
     flutterMode = true;
-    lastFlutterMillis = 0;
-    ptime = 1500;
+    ptime = 3500;
   }
-  else { 
+  else {
+    flutterMode = false;
+    // for portamento reset
     for( int i=0; i<NUM_KNOBS; i++) { last_knob_vals[i]=0; }
   }
-  
-  noteMode = isButtPressed(3);
+
+  if( isButtPressed(3) ) { 
+    noteMode = true;
+  }
+  else { 
+    noteMode = false;
+  }
   
   for(int i=0; i<NUM_VOICES; i++) {
     portamentos[i].setTime( ptime );
@@ -222,17 +231,17 @@ void updateControl() {
     aOscs[i].setFreq_Q16n16(f);
   }
 
-  if( millis() - lastFlutterMillis > 5000 ) {
-    lastFlutterMillis = millis();
-    int randamt = 100;
-    if( flutterMode ) {
+  if( flutterMode ) {
+    if( millis() - lastFlutterMillis > ptime ) {
+      lastFlutterMillis = millis();
+      int randamt = 100;
       for(int i=0; i<NUM_VOICES; i++) {
         if( knob_vals[i] != 0 ) { 
-           knob_vals[i] = knob_vals[i] + (rand(randamt) - (randamt/2));
-        }
+          knob_vals[i] = knob_vals[i] + (rand(randamt) - (randamt/2));
+         }
       }
-    } 
-  }
+    } // if flutterMillis 
+  } // flutterode
   
   // debug 
   if( millis() - lastDebugMillis > 100 ) {
@@ -248,10 +257,20 @@ void updateControl() {
 // mozzi function, called every AUDIO_RATE to output sample
 AudioOutput_t updateAudio() {
   int16_t asig = (long) 0;
+  //uint8_t b = 0; // count number of active voices
   for( int i=0; i<NUM_VOICES; i++) {
-    asig += aOscs[i].next();
+    int8_t a = aOscs[i].next();
+    asig += a;
+    //if(a) { b++; }
   }
   asig = lpf.next(asig);
   // how to programmitcally determine bits, 11 bits ok for 16 voices
-  return MonoOutput::fromAlmostNBit(11, asig);
+  //if( b<4 ) {
+  //  return MonoOutput::fromAlmostNBit(9, asig);
+  //}
+  //else if( b < 8 ) { 
+  //  return MonoOutput::fromAlmostNBit(10, asig);
+  //}
+  // 
+  return MonoOutput::fromAlmostNBit(12, asig); // should be 12 
 }
