@@ -1,5 +1,6 @@
 /**
- * qtpy_drone_synth.ino  -  8 knobs control (at least) 8 oscillators, knobs via seesaw
+ * qtpy_drone_synth_portasmd.ino - 8 knobs control (at least) 8 oscillators, knobs via seesaw
+ *                                 portamento and works on QTPy M0 SAMD21
  * 
  *  Circuit:
  *  - 8 pots hook up to seesaw, seesaw connected to QTPy RP2040
@@ -23,7 +24,7 @@
  * 15 Feb 2022 - @todbot
  */
 
-#define CONTROL_RATE 128   // sets update rate of Mozzi's updateControl() function
+//#define CONTROL_RATE 128   // sets update rate of Mozzi's updateControl() function
 #include <MozziGuts.h>
 #include <Oscil.h>
 #include <tables/saw_analogue512_int8.h> // oscillator waveform
@@ -44,21 +45,23 @@ Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL, StemmaQT port on Wi
 
 // seesaw on Attiny8x7, analog in can be 0-3, 6, 7, 18-20
 uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 19,18};  // pinout on seeknobs3qtpy board
-//uint8_t seesaw_butt_pins[ NUM_BUTTS ] = { 5, 9, 13, 14 }; // not 17!
+uint8_t seesaw_butt_pins[ NUM_BUTTS ] = { 5, 9, 13, 14 }; // not 17!
 uint32_t seesaw_butt_mask = ((uint32_t) (1<<5) | (1<<9) | (1<<13) | (1<<14)) ;
 
 uint8_t seesaw_knob_i = 0;
-float knob_smoothing = 0.5; // 1.0 = all old value
+float knob_smoothing = 0.3; // 1.0 = all old value
 int knob_vals[ NUM_KNOBS ];
+int last_knob_vals[NUM_KNOBS];
 //int butt_vals[ NUM_BUTTS ];
 uint32_t butt_vals = 0;
 
 Oscil<SAW_ANALOGUE512_NUM_CELLS, AUDIO_RATE> aOscs [NUM_VOICES];
-Oscil<COS2048_NUM_CELLS, CONTROL_RATE> kFilterMod(COS2048_DATA);
-//Portamento <CONTROL_RATE> portamentos[NUM_VOICES];
+//Oscil<COS2048_NUM_CELLS, CONTROL_RATE> kFilterMod(COS2048_DATA);
+Portamento <CONTROL_RATE> portamentos[NUM_VOICES];
 
 LowPassFilter lpf;
 uint8_t resonance = 120; // range 0-255, 255 is most resonant
+uint8_t cutoff = 50;
 
 uint32_t lastDebugMillis = 0; // debug
 uint32_t knobUpdateMillis = 0;
@@ -77,17 +80,17 @@ void setup() {
 
   startMozzi();
   
-  kFilterMod.setFreq(0.08f);
-  lpf.setCutoffFreqAndResonance(20, resonance);
+  lpf.setCutoffFreqAndResonance(cutoff, resonance);
   for( int i=0; i<NUM_VOICES; i++) { 
      aOscs[i].setTable(SAW_ANALOGUE512_DATA);
+     portamentos[i].setTime(100);
   }
 
   #ifndef ARDUINO_ARCH_RP2040
   setupKnobs();
   #endif
   
-  Serial.println("qtpy_drone_synth_testmulticore started");
+  Serial.println("qtpy_drone_synth_portasmd started");
 }
 
 //
@@ -112,6 +115,11 @@ void setupKnobs() {
     while(1) delay(10);
   }
   ss.pinModeBulk(seesaw_butt_mask, INPUT_PULLUP);
+}
+
+bool isButtPressed(uint8_t buttid) {
+   uint8_t pin = seesaw_butt_pins[buttid];
+   return !(butt_vals & (1<<pin));
 }
 
 void readButts() {
@@ -142,19 +150,23 @@ void readKnobs() {
   
 }
 
+bool doFlutter = false;
 //
 void setOscs() {
   
   for(int i=0; i<NUM_KNOBS; i++) {
-    // if( last_knob_vals[i] != knob_vals[i] ) {
-    // }
-    aOscs[i].setFreq( knob_vals[ i ] );
-  }
-  // one octave down
-  for(int i=0; i<NUM_KNOBS; i++) {
-    aOscs[i+8].setFreq( knob_vals[ i ] / 2 );
-  }
-  
+    if( last_knob_vals[i] != knob_vals[i] ) {
+      Q16n16 note = float_to_Q16n16(knob_vals[i] / 8); // hack
+      portamentos[i].start( note );
+      //portamentos[i+8].start( note/2 ); // one octave down
+    }
+    if( doFlutter ) {
+        if( knob_vals[i] != 0 ) { 
+          knob_vals[i] = knob_vals[i] + rand(10);
+        }
+    }
+    last_knob_vals[i] = knob_vals[i];
+  }  
 }
 
 
@@ -167,7 +179,26 @@ void updateControl() {
   readKnobs();
   #endif
 
-  setOscs();
+  if( isButtPressed(0) ) { 
+    // don't update oscs
+  } 
+  else {
+    setOscs();
+  }
+
+  if( isButtPressed(1) ) { 
+    // cutoff = knob_vals[7] / 8;
+    doFlutter = true;
+  }
+  else { 
+    doFlutter = false;
+  }
+
+  for(int i=0; i<NUM_VOICES; i++) {
+      Q16n16 f = portamentos[i].next();
+      aOscs[i].setFreq_Q16n16(f);
+  }
+  lpf.setCutoffFreqAndResonance(cutoff, resonance);
 
   // debug 
   if( millis() - lastDebugMillis > 100 ) {
