@@ -23,7 +23,7 @@
  * 15 Feb 2022 - @todbot
  */
 
-#define CONTROL_RATE 128 
+#define CONTROL_RATE 128   // sets update rate of Mozzi's updateControl() function
 #include <MozziGuts.h>
 #include <Oscil.h>
 #include <tables/saw_analogue512_int8.h> // oscillator waveform
@@ -57,7 +57,7 @@ uint8_t resonance = 120; // range 0-255, 255 is most resonant
 uint32_t lastDebugMillis = 0; // debug
 uint32_t knobUpdateMillis = 0;
 
-// 
+// f
 void setup() {
   // RP2040 defaults to GP0, from https://github.com/pschatzmann/Mozzi/
   #ifdef ARDUINO_ARCH_RP2040
@@ -111,7 +111,7 @@ void setupKnobs() {
 // i2c transactions take time, so only do one at a time
 void readKnobs() {
   
-  const int KNOBS_PER_READ = 2;
+  const int KNOBS_PER_READ = 1;
   
   int end_i = (seesaw_knob_i + KNOBS_PER_READ) % NUM_KNOBS;
   int done = false;
