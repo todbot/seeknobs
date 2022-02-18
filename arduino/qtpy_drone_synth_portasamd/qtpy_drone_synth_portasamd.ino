@@ -36,10 +36,14 @@
 
 #include <Wire.h>
 #include <Adafruit_seesaw.h>
+#include <Adafruit_NeoPixel.h>
 
 #define NUM_KNOBS 8
 #define NUM_VOICES 16
 #define NUM_BUTTS 4
+
+#define LED_PIN 11
+#define NUM_LEDS 1
 
 Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL, StemmaQT port on Wire1 on QTPy RP2040 
 
@@ -47,6 +51,8 @@ Adafruit_seesaw ss( &Wire ); // seeknobs I2C is std SDA/SCL, StemmaQT port on Wi
 uint8_t seesaw_knob_pins[ NUM_KNOBS ] = {7,6, 3,2, 1,0, 19,18};  // pinout on seeknobs3qtpy board
 uint8_t seesaw_butt_pins[ NUM_BUTTS ] = { 5, 9, 13, 14 }; // not 17!
 uint32_t seesaw_butt_mask = ((uint32_t) (1<<5) | (1<<9) | (1<<13) | (1<<14)) ;
+
+Adafruit_NeoPixel leds(NUM_LEDS,LED_PIN, NEO_GRB + NEO_KHZ800);
 
 uint8_t seesaw_knob_i = 0;
 float knob_smoothing = 0.3; // 1.0 = all old value
@@ -61,12 +67,16 @@ Portamento <CONTROL_RATE> portamentos[NUM_VOICES];
 
 LowPassFilter lpf;
 uint8_t resonance = 120; // range 0-255, 255 is most resonant
-uint8_t cutoff = 50;
+uint8_t cutoff = 70;
 
 uint32_t lastDebugMillis = 0; // debug
 uint32_t knobUpdateMillis = 0;
+uint32_t lastFlutterMillis = 0;
 
-// f
+bool flutterMode = false;
+bool noteMode = false;
+
+// 
 void setup() {
   // RP2040 defaults to GP0, from https://github.com/pschatzmann/Mozzi/
   #ifdef ARDUINO_ARCH_RP2040
@@ -75,11 +85,8 @@ void setup() {
   // on SAMD21 output is A0 always
   
   Serial.begin(115200);
-
   //while (!Serial) delay(10);   // debug: wait until serial port is opened
 
-  startMozzi();
-  
   lpf.setCutoffFreqAndResonance(cutoff, resonance);
   for( int i=0; i<NUM_VOICES; i++) { 
      aOscs[i].setTable(SAW_ANALOGUE512_DATA);
@@ -89,6 +96,13 @@ void setup() {
   #ifndef ARDUINO_ARCH_RP2040
   setupKnobs();
   #endif
+  
+  leds.begin();
+  leds.setBrightness(32);
+  leds.fill(0xff00ff);
+  leds.show();
+  
+  startMozzi();
   
   Serial.println("qtpy_drone_synth_portasmd started");
 }
@@ -109,7 +123,6 @@ void loop1() {
 #endif
 
 void setupKnobs() {
-  // Wire.setClock(1000000);  // does this even do anything? seems to work on SAMD21
   if(!ss.begin()){
     Serial.println(F("seesaw not found!"));
     while(1) delay(10);
@@ -117,15 +130,13 @@ void setupKnobs() {
   ss.pinModeBulk(seesaw_butt_mask, INPUT_PULLUP);
 }
 
+// buttid is 0,1,2,3 for buttons 1,2,3,4
 bool isButtPressed(uint8_t buttid) {
    uint8_t pin = seesaw_butt_pins[buttid];
    return !(butt_vals & (1<<pin));
 }
 
-void readButts() {
-    butt_vals = ss.digitalReadBulk(seesaw_butt_mask);
-}
-
+// read the knobs & buttons from seesaw
 // i2c transactions take time, so only do one at a time
 void readKnobs() {
 
@@ -136,7 +147,7 @@ void readKnobs() {
     return;
   }
   
-  // get a reading
+  // read a knob
   int val = ss.analogRead( seesaw_knob_pins[seesaw_knob_i] );
 
   // smooth it based on last val
@@ -150,35 +161,43 @@ void readKnobs() {
   
 }
 
-bool doFlutter = false;
 //
 void setOscs() {
   
   for(int i=0; i<NUM_KNOBS; i++) {
+    // random for oscillator "drift", conditional prevents "ticking" when zero/off
+    Q15n16 r = (knob_vals[i]==0) ? 0 : Q7n8_to_Q15n16(rand(100));
     if( last_knob_vals[i] != knob_vals[i] ) {
-      Q16n16 note = float_to_Q16n16(knob_vals[i] / 8); // hack
-      portamentos[i].start( note );
-      //portamentos[i+8].start( note/2 ); // one octave down
-    }
-    if( doFlutter ) {
-        if( knob_vals[i] != 0 ) { 
-          knob_vals[i] = knob_vals[i] + rand(10);
-        }
+      if( noteMode ) {
+        uint8_t note = knob_vals[i] / 8;
+        portamentos[i].start( note );
+        portamentos[i+8].start( (uint8_t)(note - 12) );
+      }
+      else { 
+        Q16n16 note = float_to_Q16n16( knob_vals[i]/8 );
+        portamentos[i].start( note );
+        portamentos[i+8].start( note - 12 + r );
+        //portamentos[i+8].start( note/2 ); // one octave down hhmmm
+      }
     }
     last_knob_vals[i] = knob_vals[i];
   }  
 }
 
-
 // Mozzi function, called every CONTROL_RATE
 void updateControl() {
+  
   // filter range (0-255) corresponds with 0-8191Hz
   // oscillator & mods run from -128 to 127
+  lpf.setCutoffFreqAndResonance(cutoff, resonance);
 
   #ifndef ARDUINO_ARCH_RP2040
   readKnobs();
   #endif
 
+  int ptime = 300;
+  flutterMode = false;
+    
   if( isButtPressed(0) ) { 
     // don't update oscs
   } 
@@ -187,27 +206,42 @@ void updateControl() {
   }
 
   if( isButtPressed(1) ) { 
-    // cutoff = knob_vals[7] / 8;
-    doFlutter = true;
+    flutterMode = true;
+    lastFlutterMillis = 0;
+    ptime = 1500;
   }
   else { 
-    doFlutter = false;
+    for( int i=0; i<NUM_KNOBS; i++) { last_knob_vals[i]=0; }
   }
-
+  
+  noteMode = isButtPressed(3);
+  
   for(int i=0; i<NUM_VOICES; i++) {
-      Q16n16 f = portamentos[i].next();
-      aOscs[i].setFreq_Q16n16(f);
+    portamentos[i].setTime( ptime );
+    Q16n16 f = portamentos[i].next();
+    aOscs[i].setFreq_Q16n16(f);
   }
-  lpf.setCutoffFreqAndResonance(cutoff, resonance);
 
+  if( millis() - lastFlutterMillis > 5000 ) {
+    lastFlutterMillis = millis();
+    int randamt = 100;
+    if( flutterMode ) {
+      for(int i=0; i<NUM_VOICES; i++) {
+        if( knob_vals[i] != 0 ) { 
+           knob_vals[i] = knob_vals[i] + (rand(randamt) - (randamt/2));
+        }
+      }
+    } 
+  }
+  
   // debug 
   if( millis() - lastDebugMillis > 100 ) {
     lastDebugMillis = millis();
     for( int i=0; i< NUM_KNOBS; i++) { 
       Serial.printf("%4d ", knob_vals[i]);
     }
-    Serial.println(butt_vals, BIN);
-  }
+    Serial.println(butt_vals, BIN);    
+  } // if millis
   
 }
 
@@ -219,5 +253,5 @@ AudioOutput_t updateAudio() {
   }
   asig = lpf.next(asig);
   // how to programmitcally determine bits, 11 bits ok for 16 voices
-  return MonoOutput::fromAlmostNBit(13, asig);
+  return MonoOutput::fromAlmostNBit(11, asig);
 }
