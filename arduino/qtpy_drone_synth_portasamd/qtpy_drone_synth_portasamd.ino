@@ -71,9 +71,9 @@ uint8_t cutoff = 70;
 
 uint32_t lastDebugMillis = 0; // debug
 uint32_t knobUpdateMillis = 0;
-uint32_t lastFlutterMillis = 0;
+uint32_t lastScatterMillis = 0;
 
-bool flutterMode = false;
+bool scatterMode = false;
 bool noteMode = false;
 
 // 
@@ -165,24 +165,26 @@ void readKnobs() {
 void setOscs() {
   
   for(int i=0; i<NUM_KNOBS; i++) {
-    // random for oscillator "drift". conditional prevents "ticking" when zero/off
-    Q15n16 r = (knob_vals[i]==0) ? 0 : Q7n8_to_Q15n16(rand(50));
-    //Q15n16 r = 0;
+    float note = knob_vals[i] / 8;
+    float note2 = note + 12;
+    Q15n16 r = Q7n8_to_Q15n16(rand(50)); // random for oscillator "drift". 
+    bool is_zero = knob_vals[i] < 2;
+    if( is_zero ) { // if "zero", turn oscillators off
+      note = 0;
+      note2 = 0;
+      r = 0;
+    }
     // need to fix this logic
-    if( last_knob_vals[i] != knob_vals[i] ) {
+//    if( last_knob_vals[i] != knob_vals[i] || is_zero ) { // this is_zero thing seems a hack
       if( noteMode ) {
-        uint8_t note = knob_vals[i] / 8;
-        portamentos[i].start( note );
-        portamentos[i+8].start( (uint8_t)(note + 12) );
+        portamentos[i].start( (uint8_t)(note) );
+        portamentos[i+8].start( (uint8_t)(note2) );
       }
       else {
-        float note = knob_vals[i] / 8;
-        Q16n16 notef1 = float_to_Q16n16( note );
-        Q16n16 notef2 = float_to_Q16n16( note + 12 + r );
-        portamentos[i].start( notef1 );
-        portamentos[i+8].start( notef2 );
+        portamentos[i].start( float_to_Q16n16( note ) );
+        portamentos[i+8].start( float_to_Q16n16( note2 + r ) );
       }
-    }
+//    }
     last_knob_vals[i] = knob_vals[i];
   }  
 }
@@ -199,7 +201,7 @@ void updateControl() {
   #endif
 
   int ptime = 300;
-  flutterMode = false;
+  scatterMode = false;
     
   if( isButtPressed(0) ) { 
     // don't update oscs
@@ -209,11 +211,11 @@ void updateControl() {
   }
 
   if( isButtPressed(1) ) { 
-    flutterMode = true;
+    scatterMode = true;
     ptime = 3500;
   }
   else {
-    flutterMode = false;
+    scatterMode = false;
     // for portamento reset
     for( int i=0; i<NUM_KNOBS; i++) { last_knob_vals[i]=0; }
   }
@@ -231,17 +233,17 @@ void updateControl() {
     aOscs[i].setFreq_Q16n16(f);
   }
 
-  if( flutterMode ) {
-    if( millis() - lastFlutterMillis > ptime ) {
-      lastFlutterMillis = millis();
+  if( scatterMode ) {
+    if( millis() - lastScatterMillis > ptime ) {
+      lastScatterMillis = millis();
       int randamt = 100;
       for(int i=0; i<NUM_VOICES; i++) {
         if( knob_vals[i] != 0 ) { 
           knob_vals[i] = knob_vals[i] + (rand(randamt) - (randamt/2));
          }
       }
-    } // if flutterMillis 
-  } // flutterode
+    } // if scatterMillis 
+  } // scatterMode
   
   // debug 
   if( millis() - lastDebugMillis > 100 ) {
@@ -249,7 +251,7 @@ void updateControl() {
     for( int i=0; i< NUM_KNOBS; i++) { 
       Serial.printf("%4d ", knob_vals[i]);
     }
-    Serial.println(butt_vals, BIN);    
+    Serial.println(butt_vals, BIN);
   } // if millis
   
 }
