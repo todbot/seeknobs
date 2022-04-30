@@ -13,3 +13,6 @@ seeknobs PCB features:
 <img src="./docs/seeknobs3qtpy_test1.jpg">
 <img src="./docs/seeknobs1.jpg">
 
+https://user-images.githubusercontent.com/274093/166125135-3420fb34-c7c5-4f65-addc-f08b40fc5832.mp4
+
+
