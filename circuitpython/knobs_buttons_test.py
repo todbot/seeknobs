@@ -28,17 +28,16 @@ knob_i = 0  # which knob we're currenly working on
 def update_knobs_and_buttons():
     global knob_i, button_vals
     if knob_i == len(knob_pins):  # read all knobs, now read buttons
-        button_vals = ss.digital_read_bulk(button_mask)
+        button_vals = ss.digital_read_bulk(button_mask, delay=0)
         knob_i = 0
     else:
-        val = ss.analog_read(knob_pins[knob_i])
+        val = ss.analog_read(knob_pins[knob_i], delay=0)
         knob_vals[knob_i] = val
         leds[knob_i] = rainbowio.colorwheel(val // 4)  # temp visual feedback
         knob_i = knob_i+1
 
 def print_knobs_and_buttons():
     for i in range(len(knob_pins)):
-        knob_vals[i] = ss.analog_read(knob_pins[i])
         print(f'{knob_vals[i]:4d} ', end='')
     print(f'  0b{button_vals:08.8b}')
 
