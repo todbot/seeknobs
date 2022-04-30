@@ -39,7 +39,7 @@ def update_knobs_and_buttons():
 def print_knobs_and_buttons():
     for i in range(len(knob_pins)):
         print(f'{knob_vals[i]:4d} ', end='')
-    print(f'  0b{button_vals:08.8b}')
+    print(f'  0b{button_vals:016b}')
 
 last_time = 0
 while True:
