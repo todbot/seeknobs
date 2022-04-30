@@ -27,6 +27,7 @@ ss.pin_mode_bulk(button_mask, ss.INPUT_PULLUP)
 knob_vals = [0] * len(knob_pins)  # holder for all knob positions
 button_vals = 0  # bitmask for now
 knob_i = 0  # which knob we're currenly working on
+knob_smoothing = 0.3  # 1.0 = all old value
 
 # setup usb midi
 cc_nums = ( 21, 22, 23, 24, 25, 26, 27, 28 )  # which CCs to send on
@@ -41,9 +42,11 @@ def update_knobs_and_buttons():
         knob_i = 0
     else:
         val = ss.analog_read(knob_pins[knob_i], delay=0)
-        knob_vals[knob_i] = val
+        last_val = knob_vals[knob_i]
+        val = val + (knob_smoothing * (last_val - val)); # simple filter
+        knob_vals[knob_i] = int(val)
         leds[knob_i] = rainbowio.colorwheel(val // 4)  # temp visual feedback
-        knob_i = knob_i+1
+        knob_i = knob_i+1  # set index for next knob
 
 def print_knobs_and_buttons():
     for i in range(len(knob_pins)):
@@ -55,7 +58,7 @@ def send_midi_ccs():
     if knob_i == len(knob_pins): return  # invalid value for knobs
     cc_num = cc_nums[ knob_i ] # get current knob
     cc_val = knob_vals[ knob_i ] // 8 # map to 0-127
-    if cc_val != last_cc_vals[ knob_i ]: # if different, send MIDI CC!
+    if abs(cc_val - last_cc_vals[ knob_i ]) > 1: # if different, send MIDI CC!
         last_cc_vals[knob_i] = cc_val
         midi.send(ControlChange(cc_num, cc_val))
     
