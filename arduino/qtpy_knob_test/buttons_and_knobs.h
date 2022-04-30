@@ -40,10 +40,7 @@ void setupKnobsAndButtons() {
     Serial.println("seesaw pixels not found!");
     while(1) delay(10);
   }
-
-  uint32_t version = ((ss.getVersion() >> 16) & 0xFFFF);
-  Serial.print("seesaw version:"); Serial.println(version);
-  
+    
   uint16_t pid;
   uint8_t year, mon, day;
   ss.getProdDatecode(&pid, &year, &mon, &day);
@@ -54,7 +51,7 @@ void setupKnobsAndButtons() {
   Serial.print(mon); Serial.print("/");
   Serial.println(day);
 
-  ledsss.setBrightness(32);
+  ledsss.setBrightness(25);
   ledsss.setPixelColor(0, 0xff00ff);
   ledsss.setPixelColor(2, 0x00ffff);
   ledsss.show();

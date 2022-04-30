@@ -61,6 +61,7 @@ void loop() {
     for( int i=0; i< NUM_KNOBS; i++) { 
       Serial.printf("%4d ", knob_vals[i]);
     }
+    Serial.print(" buttons:");
     Serial.println(butt_vals, BIN);
   } // if millis
   
