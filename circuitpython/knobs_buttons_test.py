@@ -41,10 +41,12 @@ def print_knobs_and_buttons():
         print(f'{knob_vals[i]:4d} ', end='')
     print(f'  0b{button_vals:08.8b}')
 
+last_time = 0
 while True:
     st = time.monotonic()
     update_knobs_and_buttons()
-    print("update time: %2d:" % int( (time.monotonic()-st)*1000),end='')  # == ~14 ms on RP2040
-    print_knobs_and_buttons()
-    time.sleep(0.001) # emulate work being done elsewhere
-
+    if time.monotonic() - last_time > 0.1:
+        last_time = time.monotonic()
+        print("update time: %2d:" % int( (time.monotonic()-st)*1000),end='')  # == ~14 ms on RP2040
+        print_knobs_and_buttons()
+    #time.sleep(0.001) # emulate work being done elsewhere
